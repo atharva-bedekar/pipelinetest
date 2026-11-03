@@ -33,5 +33,5 @@ python (Join-Path $PSScriptRoot 'smoke_ctypes.py') (Join-Path $OutDir $Binary)
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $Archive = Join-Path $OutDir "daas-helm-validation-$Version-$Platform.zip"
 Compress-Archive -Path (Join-Path $OutDir $Binary), $Header, (Join-Path $OutDir 'manifest.json') -DestinationPath $Archive -Force
-$ChecksumFiles = @($Binary, $Header, 'manifest.json', [IO.Path]::GetFileName($Archive))
+$ChecksumFiles = @($Binary, [IO.Path]::GetFileName($Header), 'manifest.json', [IO.Path]::GetFileName($Archive))
 Write-DaasArtifactChecksums -OutDir $OutDir -Platform $Platform -ArtifactNames $ChecksumFiles
