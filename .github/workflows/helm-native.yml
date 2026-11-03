@@ -1,0 +1,77 @@
+name: Build native Helm validation library
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the completed versioned bundles as a GitHub Release
+        type: boolean
+        required: true
+        default: false
+      release_tag:
+        description: Required when publishing, for example helm-native-v1.0.0
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test (windows-amd64)
+    runs-on: windows-latest
+    steps:
+      - name: Validate release tag before building
+        if: inputs.publish_release
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ($env:RELEASE_TAG -ne 'helm-native-v1.0.0') {
+            throw 'release_tag must match the bundle version: helm-native-v1.0.0'
+          }
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: Server/native/helm_validation/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Add Windows C compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_PATH 'C:\msys64\ucrt64\bin'
+      - name: Build, run Go tests, package, and smoke-test ctypes
+        shell: pwsh
+        run: ./Server/native/helm_validation/build.ps1 -OutDir "$env:RUNNER_TEMP\helm-native"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-validation-windows-amd64
+          path: ${{ runner.temp }}/helm-native/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: inputs.publish_release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: helm-validation-*
+          path: release-assets
+      - name: Publish explicitly requested release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release create "$RELEASE_TAG" --repo "$GH_REPO" --target "$GITHUB_SHA" release-assets/helm-validation-windows-amd64/daas-helm-validation-* release-assets/helm-validation-windows-amd64/SHA256SUMS-windows-amd64.txt --title "$RELEASE_TAG" --notes "Prebuilt official Helm v3.22.1 Windows amd64 validation library. The archive contains the library, C header and manifest; the adjacent checksum file covers the archive and unpacked files."
